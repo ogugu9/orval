@@ -1,3 +1,4 @@
+import { GetterBody } from './../../core/src/types';
 import {
   camel,
   ClientBuilder,
@@ -45,11 +46,18 @@ const AXIOS_DEPENDENCIES: GeneratorDependency[] = [
 const SWR_DEPENDENCIES: GeneratorDependency[] = [
   {
     exports: [
-      { name: 'useSwr', values: true, default: true },
+      { name: 'useSWR', values: true, default: true },
       { name: 'SWRConfiguration' },
       { name: 'Key' },
     ],
     dependency: 'swr',
+  },
+  {
+    exports: [
+      { name: 'useSWRMutation', values: true, default: true },
+      { name: 'SWRMutationConfiguration' },
+    ],
+    dependency: 'swr/mutation',
   },
 ];
 
@@ -164,14 +172,19 @@ const generateSwrRequestFunction = (
 
 const generateSwrArguments = ({
   operationName,
+  isMutation,
   mutator,
   isRequestOptions,
 }: {
   operationName: string;
+  isMutation: boolean;
   mutator?: GeneratorMutator;
   isRequestOptions: boolean;
 }) => {
-  const definition = `SWRConfiguration<Awaited<ReturnType<typeof ${operationName}>>, TError> & { swrKey?: Key, enabled?: boolean }`;
+  const configuration = isMutation
+    ? 'SWRMutationConfiguration'
+    : 'SWRConfiguration';
+  const definition = `${configuration}<Awaited<ReturnType<typeof ${operationName}>>, TError> & { swrKey?: Key, enabled?: boolean }`;
 
   if (!isRequestOptions) {
     return `swrOptions?: ${definition}`;
@@ -192,6 +205,8 @@ const generateSwrImplementation = ({
   swrProperties,
   swrKeyProperties,
   params,
+  body,
+  isMutation,
   mutator,
   isRequestOptions,
   response,
@@ -203,13 +218,18 @@ const generateSwrImplementation = ({
   swrKeyFnName: string;
   swrProperties: string;
   swrKeyProperties: string;
+  isMutation: boolean;
   params: GetterParams;
+  body: GetterBody;
   props: GetterProps;
   response: GetterResponse;
   mutator?: GeneratorMutator;
   swrOptions: { options?: any };
 }) => {
-  const swrProps = toObjectString(props, 'implementation');
+  const swrProps = toObjectString(
+    isMutation ? props.filter((p) => p.type !== GetterPropType.BODY) : props,
+    'implementation',
+  );
   const httpFunctionProps = swrProperties;
 
   const swrKeyImplementation = `const isEnabled = swrOptions?.enabled !== false${
@@ -217,7 +237,7 @@ const generateSwrImplementation = ({
       ? ` && !!(${params.map(({ name }) => name).join(' && ')})`
       : ''
   }
-    const swrKey = swrOptions?.swrKey ?? (() => isEnabled ? ${swrKeyFnName}(${swrKeyProperties}) : null);`;
+  const swrKey = swrOptions?.swrKey ?? (() => isEnabled ? ${swrKeyFnName}(${swrKeyProperties}) : null);`;
 
   let errorType = `AxiosError<${response.definition.errors || 'unknown'}>`;
 
@@ -227,16 +247,37 @@ const generateSwrImplementation = ({
       : response.definition.errors || 'unknown';
   }
 
+  const hasBody = props.some((prop) => prop.type === GetterPropType.BODY);
+
+  const swrFnImplementation = `
+  const swrFn = (${
+    isMutation
+      ? `key: Key${hasBody ? `, options: { arg: ${body.definition} }` : ''}`
+      : ''
+  }) => ${operationName}(${httpFunctionProps}${httpFunctionProps ? ', ' : ''}${
+    isRequestOptions
+      ? !mutator
+        ? `axiosOptions`
+        : mutator?.hasSecondArg
+        ? 'requestOptions'
+        : ''
+      : ''
+  });
+  `;
+
   return `
-export type ${pascal(
-    operationName,
-  )}QueryResult = NonNullable<Awaited<ReturnType<typeof ${operationName}>>>
-export type ${pascal(operationName)}QueryError = ${errorType}
+export type ${pascal(operationName)}${
+    isMutation ? 'Mutation' : 'Query'
+  }Result = NonNullable<Awaited<ReturnType<typeof ${operationName}>>>
+export type ${pascal(operationName)}${
+    isMutation ? 'Mutation' : 'Query'
+  }Error = ${errorType}
 
 export const ${camel(
     `use-${operationName}`,
   )} = <TError = ${errorType}>(\n ${swrProps} ${generateSwrArguments({
     operationName,
+    isMutation,
     mutator,
     isRequestOptions,
   })}\n  ) => {
@@ -254,19 +295,13 @@ export const ${camel(
   }
 
   ${swrKeyImplementation}
-  const swrFn = () => ${operationName}(${httpFunctionProps}${
-    httpFunctionProps ? ', ' : ''
-  }${
-    isRequestOptions
-      ? !mutator
-        ? `axiosOptions`
-        : mutator?.hasSecondArg
-        ? 'requestOptions'
-        : ''
-      : ''
-  });
+  ${swrFnImplementation}
 
-  const query = useSwr<Awaited<ReturnType<typeof swrFn>>, TError>(swrKey, swrFn, ${
+  const result = ${
+    isMutation ? 'useSWRMutation' : 'useSWR'
+  }<Awaited<ReturnType<typeof swrFn>>, TError, Key${
+    hasBody ? `, ${body.definition}` : ''
+  }>(swrKey, swrFn, ${
     swrOptions.options
       ? `{
     ${stringify(swrOptions.options)?.slice(1, -1)}
@@ -277,7 +312,7 @@ export const ${camel(
 
   return {
     swrKey,
-    ...query
+    ...result
   }
 }\n`;
 };
@@ -298,32 +333,43 @@ const generateSwrHook = (
 ) => {
   const isRequestOptions = override?.requestOptions !== false;
 
-  if (verb !== Verbs.GET) {
+  const isMutation = [
+    Verbs.POST,
+    Verbs.PUT,
+    Verbs.DELETE,
+    Verbs.PATCH,
+  ].includes(verb);
+
+  if (verb !== Verbs.GET && !isMutation) {
     return '';
   }
 
   const swrProperties = props
     .map(({ name, type }) =>
-      type === GetterPropType.BODY ? body.implementation : name,
+      type === GetterPropType.BODY ? 'options.arg' : name,
     )
-    .join(',');
+    .join(', ');
 
   const swrKeyProperties = props
-    .filter((prop) => prop.type !== GetterPropType.HEADER)
-    .map(({ name, type }) =>
-      type === GetterPropType.BODY ? body.implementation : name,
+    .filter(
+      (prop) =>
+        ![GetterPropType.HEADER, GetterPropType.BODY].includes(prop.type),
     )
-    .join(',');
+    .map(({ name }) => name)
+    .join(', ');
 
   const swrKeyFnName = camel(`get-${operationName}-key`);
   const queryKeyProps = toObjectString(
-    props.filter((prop) => prop.type !== GetterPropType.HEADER),
+    props.filter(
+      (prop) =>
+        ![GetterPropType.HEADER, GetterPropType.BODY].includes(prop.type),
+    ),
     'implementation',
   );
 
   return `export const ${swrKeyFnName} = (${queryKeyProps}) => [\`${route}\`${
     queryParams ? ', ...(params ? [params]: [])' : ''
-  }${body.implementation ? `, ${body.implementation}` : ''}];
+  }];
 
     ${generateSwrImplementation({
       operationName,
@@ -331,7 +377,9 @@ const generateSwrHook = (
       swrProperties,
       swrKeyProperties,
       params,
+      body,
       props,
+      isMutation,
       mutator,
       isRequestOptions,
       response,
