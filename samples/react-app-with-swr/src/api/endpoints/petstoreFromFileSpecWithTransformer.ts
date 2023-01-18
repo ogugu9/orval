@@ -4,14 +4,17 @@
  * Swagger Petstore
  * OpenAPI spec version: 1.0.0
  */
-import useSwr from 'swr';
+import useSWR from 'swr';
 import type { SWRConfiguration, Key } from 'swr';
+import useSWRMutation from 'swr/mutation';
+import type { SWRMutationConfiguration } from 'swr/mutation';
 import type {
   Pets,
   Error,
   ListPetsParams,
   Pet,
   CreatePetsBody,
+  UpdatePetBody,
 } from '../model';
 import { customInstance } from '../mutator/custom-instance';
 
@@ -56,9 +59,10 @@ export const useListPets = <TError = Error>(
   const swrKey =
     swrOptions?.swrKey ??
     (() => (isEnabled ? getListPetsKey(params, version) : null));
+
   const swrFn = () => listPets(params, version);
 
-  const query = useSwr<Awaited<ReturnType<typeof swrFn>>, TError>(
+  const result = useSWR<Awaited<ReturnType<typeof swrFn>>, TError, Key>(
     swrKey,
     swrFn,
     swrOptions,
@@ -66,7 +70,7 @@ export const useListPets = <TError = Error>(
 
   return {
     swrKey,
-    ...query,
+    ...result,
   };
 };
 
@@ -80,6 +84,45 @@ export const createPets = (createPetsBody: CreatePetsBody, version = 1) => {
     headers: { 'Content-Type': 'application/json' },
     data: createPetsBody,
   });
+};
+
+export const getCreatePetsKey = (version = 1) => [`/v${version}/pets`];
+
+export type CreatePetsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createPets>>
+>;
+export type CreatePetsMutationError = Error;
+
+export const useCreatePets = <TError = Error>(
+  version = 1,
+  options?: {
+    swr?: SWRMutationConfiguration<
+      Awaited<ReturnType<typeof createPets>>,
+      TError
+    > & { swrKey?: Key; enabled?: boolean };
+  },
+) => {
+  const { swr: swrOptions } = options ?? {};
+
+  const isEnabled = swrOptions?.enabled !== false && !!version;
+  const swrKey =
+    swrOptions?.swrKey ??
+    (() => (isEnabled ? getCreatePetsKey(version) : null));
+
+  const swrFn = (key: Key, options: { arg: CreatePetsBody }) =>
+    createPets(options.arg, version);
+
+  const result = useSWRMutation<
+    Awaited<ReturnType<typeof swrFn>>,
+    TError,
+    Key,
+    CreatePetsBody
+  >(swrKey, swrFn, swrOptions);
+
+  return {
+    swrKey,
+    ...result,
+  };
 };
 
 /**
@@ -117,9 +160,10 @@ export const useShowPetById = <TError = Error>(
   const swrKey =
     swrOptions?.swrKey ??
     (() => (isEnabled ? getShowPetByIdKey(petId, version) : null));
+
   const swrFn = () => showPetById(petId, version);
 
-  const query = useSwr<Awaited<ReturnType<typeof swrFn>>, TError>(
+  const result = useSWR<Awaited<ReturnType<typeof swrFn>>, TError, Key>(
     swrKey,
     swrFn,
     swrOptions,
@@ -127,6 +171,64 @@ export const useShowPetById = <TError = Error>(
 
   return {
     swrKey,
-    ...query,
+    ...result,
+  };
+};
+
+/**
+ * @summary Update a pet
+ */
+export const updatePet = (
+  petId: string,
+  updatePetBody: UpdatePetBody,
+  version = 1,
+) => {
+  return customInstance<Pet>({
+    url: `/v${version}/pets/${petId}`,
+    method: 'put',
+    headers: { 'Content-Type': 'application/json' },
+    data: updatePetBody,
+  });
+};
+
+export const getUpdatePetKey = (petId: string, version = 1) => [
+  `/v${version}/pets/${petId}`,
+];
+
+export type UpdatePetMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updatePet>>
+>;
+export type UpdatePetMutationError = Error;
+
+export const useUpdatePet = <TError = Error>(
+  petId: string,
+  version = 1,
+  options?: {
+    swr?: SWRMutationConfiguration<
+      Awaited<ReturnType<typeof updatePet>>,
+      TError
+    > & { swrKey?: Key; enabled?: boolean };
+  },
+) => {
+  const { swr: swrOptions } = options ?? {};
+
+  const isEnabled = swrOptions?.enabled !== false && !!(version && petId);
+  const swrKey =
+    swrOptions?.swrKey ??
+    (() => (isEnabled ? getUpdatePetKey(petId, version) : null));
+
+  const swrFn = (key: Key, options: { arg: UpdatePetBody }) =>
+    updatePet(petId, options.arg, version);
+
+  const result = useSWRMutation<
+    Awaited<ReturnType<typeof swrFn>>,
+    TError,
+    Key,
+    UpdatePetBody
+  >(swrKey, swrFn, swrOptions);
+
+  return {
+    swrKey,
+    ...result,
   };
 };

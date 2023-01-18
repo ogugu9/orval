@@ -34,6 +34,14 @@ export const getShowPetByIdMock = () =>
     tag: faker.helpers.ranarrayElementdomize([faker.random.word(), void 0]),
   }))();
 
+export const getUpdatePetMock = () => ({
+  '@id': faker.helpers.arrayElement([faker.random.word(), undefined]),
+  id: faker.datatype.number({ min: undefined, max: undefined }),
+  name: (() => faker.name.lastName())(),
+  tag: (() => faker.name.lastName())(),
+  email: faker.helpers.arrayElement([faker.internet.email(), undefined]),
+});
+
 export const getSwaggerPetstoreMSW = () => [
   rest.get('*/v:version/pets', (_req, res, ctx) => {
     return res(
@@ -54,6 +62,13 @@ export const getSwaggerPetstoreMSW = () => [
       ctx.delay(1000),
       ctx.status(200, 'Mocked status'),
       ctx.json(getShowPetByIdMock()),
+    );
+  }),
+  rest.put('*/v:version/pets/:petId', (_req, res, ctx) => {
+    return res(
+      ctx.delay(1000),
+      ctx.status(200, 'Mocked status'),
+      ctx.json(getUpdatePetMock()),
     );
   }),
 ];
