@@ -173,18 +173,24 @@ const generateSwrRequestFunction = (
 const generateSwrArguments = ({
   operationName,
   isMutation,
+  hasBody,
+  body,
   mutator,
   isRequestOptions,
 }: {
   operationName: string;
   isMutation: boolean;
+  hasBody: boolean;
+  body: GetterBody;
   mutator?: GeneratorMutator;
   isRequestOptions: boolean;
 }) => {
   const configuration = isMutation
     ? 'SWRMutationConfiguration'
     : 'SWRConfiguration';
-  const definition = `${configuration}<Awaited<ReturnType<typeof ${operationName}>>, TError> & { swrKey?: Key, enabled?: boolean }`;
+  const definition = `${configuration}<Awaited<ReturnType<typeof ${operationName}>>, TError${
+    isMutation ? `, ${body.definition || 'never'}` : ''
+  }> & { swrKey?: Key, enabled?: boolean }`;
 
   if (!isRequestOptions) {
     return `swrOptions?: ${definition}`;
@@ -278,6 +284,8 @@ export const ${camel(
   )} = <TError = ${errorType}>(\n ${swrProps} ${generateSwrArguments({
     operationName,
     isMutation,
+    hasBody,
+    body,
     mutator,
     isRequestOptions,
   })}\n  ) => {
