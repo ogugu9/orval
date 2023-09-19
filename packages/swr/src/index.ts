@@ -185,13 +185,17 @@ const generateSwrArguments = ({
   mutator?: GeneratorMutator;
   isRequestOptions: boolean;
 }) => {
-  const configuration = isMutation
-    ? 'SWRMutationConfiguration'
-    : 'SWRConfiguration';
-  const definition = `${configuration}<Awaited<ReturnType<typeof ${operationName}>>, TError${
-    isMutation ? `, ${body.definition || 'never'}` : ''
-  }> & { swrKey?: Key, enabled?: boolean }`;
-
+  const definition = isMutation
+    ? `SWRMutationConfiguration<` +
+      `Awaited<ReturnType<typeof ${operationName}>>, ` +
+      `TError, ` +
+      `Key, ` +
+      (body.definition || 'never') +
+      `> & { swrKey?: Key, enabled?: boolean }`
+    : `SWRConfiguration<` +
+      `Awaited<ReturnType<typeof ${operationName}>>, ` +
+      `TError, ` +
+      `> & { swrKey?: Key, enabled?: boolean }`;
   if (!isRequestOptions) {
     return `swrOptions?: ${definition}`;
   }
